@@ -30,6 +30,16 @@ const ASSETLINKS = [
       ],
     },
   },
+  {
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: {
+      namespace: "android_app",
+      package_name: "com.hivepen.carlito.dev",
+      sha256_cert_fingerprints: [
+        "96:64:50:99:6D:F7:79:66:ED:2A:17:32:03:0E:9E:D4:39:08:30:76:78:0B:B4:71:24:29:94:BB:B8:FF:E5:30",
+        ],
+    },
+  },
 ];
 
 function escapeHtml(value) {
