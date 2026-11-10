@@ -1,0 +1,1 @@
+{"$schema":"node_modules/wrangler/config-schema.json","compatibility_date":"2026-11-10","compatibility_flags":["nodejs_compat"],"main":"src/index.js","name":"carlito-web","observability":{"enabled":true}}
