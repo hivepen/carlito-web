@@ -121,6 +121,8 @@ function payPage(searchParams) {
   const link = appLink(params);
   const digits = to.replace(/\D/g, "");
   const isCard = digits.length >= 15;
+  const title = isCard ? "Solicitud de transferencia" : "Pago en línea";
+  const intro = isCard ? "Te enviaron una solicitud de transferencia con Carlito, la app de servicios móviles en Cuba." : "Te enviaron un enlace para pagar en línea con Carlito, la app de servicios móviles en Cuba.";
 
   const rows = [];
   if (to) {
@@ -153,7 +155,7 @@ function payPage(searchParams) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pago con Carlito</title>
+<title>${title}</title>
 <style>
   :root { color-scheme: light dark; }
   body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f6f6f4; color: #1a1a1a; }
@@ -181,8 +183,8 @@ function payPage(searchParams) {
 </head>
 <body>
 <main>
-  <h1>Pago con Carlito</h1>
-  <p>Te enviaron un enlace para pagar con Carlito, la app de servicios móviles en Cuba.</p>
+  <h1>${title}</h1>
+  <p>${intro}</p>
   ${amountHtml}
   ${rows.length ? `<div class="card">${rows.join("")}</div>` : ""}
   <p>Para completar el pago necesitas tener Carlito instalado. Si ya la tienes, abre el enlace desde la app.</p>
