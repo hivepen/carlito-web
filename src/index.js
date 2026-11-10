@@ -187,7 +187,7 @@ function payPage(searchParams) {
   <p>${intro}</p>
   ${amountHtml}
   ${rows.length ? `<div class="card">${rows.join("")}</div>` : ""}
-  <p>Para completar el pago necesitas tener Carlito instalado. Si ya la tienes, toca «Abrir en Carlito».</p>
+  <p>Para completar el pago necesitas tener Carlito instalado.</p>
   ${link ? `<a class="btn secondary" href="${escapeHtml(link)}">Abrir en Carlito</a>` : ""}
   <a class="btn primary" href="${DOWNLOAD_URL}">Instalar Carlito</a>
   <footer>Carlito is a suite of utilities for mobile services in Cuba. · <a href="${SITE_URL}">hivepen.com</a></footer>
