@@ -138,6 +138,52 @@ test("/pay transfer page shows both QRs with URI selected by default", async () 
   assert.match(body, /<span class="av ez">Ez<\/span>/);
 });
 
+test("/pay transfer page shows the QRs in a modal opened from the amount row", async () => {
+  const { body } = await get(
+    "/pay?to=9200123456789012&amount=150.00&currency=CUP&receiver-name=Mar%C3%ADa&message=Pr%C3%A9stamo",
+  );
+  // Modal chrome, hidden until the QR button opens it.
+  assert.match(
+    body,
+    /id="qrModal" role="dialog" aria-modal="true"[^>]*hidden/,
+  );
+  assert.match(body, /class="modal-close" aria-label="Cerrar"/);
+  // QR icon button lives in the amount row, right of the amount.
+  assert.match(body, /<div class="amount">[\s\S]*?id="qrOpenBtn"/);
+  assert.match(
+    body,
+    /class="qr-btn" id="qrOpenBtn" aria-label="Ver código QR" aria-haspopup="dialog"/,
+  );
+  // QR panes are inside the modal, not inline on the page.
+  const modalAt = body.indexOf('id="qrModal"');
+  const qrAt = body.indexOf('class="qr"');
+  assert.ok(modalAt !== -1 && qrAt > modalAt);
+  assert.ok(body.indexOf('data-qr="uri"') > modalAt);
+  // Quiet zone: white padded container around the QR.
+  assert.match(body, /\.qr \{[^}]*background: #fff;[^}]*padding: 16px/);
+  // Modal open/close wiring: button, backdrop, Escape.
+  assert.match(body, /openBtn\.addEventListener\("click", openModal\)/);
+  assert.match(body, /e\.target === modal/);
+  assert.match(body, /e\.key === "Escape"/);
+});
+
+test("/pay merchant page shows the JSON QR inside the modal", async () => {
+  const { body } = await get(
+    "/pay?to=57001&amount=315.0&currency=CUP&reference=APK00000000004278640",
+  );
+  assert.match(body, /id="qrModal"/);
+  assert.match(body, /id="qrOpenBtn"/);
+  const modalAt = body.indexOf('id="qrModal"');
+  assert.ok(body.indexOf('class="qr"') > modalAt);
+  assert.doesNotMatch(body, /sin monto/);
+});
+
+test("/pay without a recipient shows no QR modal or button", async () => {
+  const { body } = await get("/pay?amount=100&currency=CUP");
+  assert.doesNotMatch(body, /qrModal/);
+  assert.doesNotMatch(body, /qrOpenBtn/);
+});
+
 test("/pay transfer page still shows the TM tab without a phone", async () => {
   const { body } = await get("/pay?to=9200123456789012&amount=100&currency=CUP");
   assert.match(body, /data-qr="tm"/);

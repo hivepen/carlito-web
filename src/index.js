@@ -85,6 +85,9 @@ function qrSvg(text, altId) {
   });
 }
 
+// Inline QR glyph for the button that opens the QR modal (no image assets).
+const QR_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="5.5" y="5.5" width="2" height="2" fill="currentColor"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="16.5" y="5.5" width="2" height="2" fill="currentColor"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="5.5" y="16.5" width="2" height="2" fill="currentColor"/><rect x="14" y="14" width="3" height="3" fill="currentColor"/><rect x="18" y="14" width="3" height="3" fill="currentColor"/><rect x="14" y="18" width="3" height="3" fill="currentColor"/><rect x="18" y="18" width="3" height="3" fill="currentColor"/></svg>`;
+
 // The phone for the Transfermóvil transfer QR: the recipient's notification
 // phone from `notify`, only when it is a tel: URI with a valid Cuban mobile
 // number (strip the tel: prefix and any +53/53 country prefix; valid =
@@ -215,15 +218,14 @@ function payPage(searchParams) {
     );
   }
 
-  const amountHtml = amount
-    ? `<div class="amount">${escapeHtml(amount)} <span>${escapeHtml(currency)}</span></div>`
-    : "";
-
   // QR codes. Transfer: the payto URI is the primary QR (it carries the
   // amount, the main value of the invoice); the Transfermóvil QR is the
   // "sin monto" alternative, switched with small tabs below the QR.
-  // Merchant: the single JSON QR. If QR generation ever fails, the page
-  // still renders without a QR instead of erroring.
+  // Merchant: the single JSON QR. The QRs live inside a modal (opened from
+  // a QR icon button in the amount row) instead of inline on the page, and
+  // the .qr container adds white padding as the quiet zone. If QR
+  // generation ever fails, the page still renders without a QR instead of
+  // erroring.
   let qrHtml = "";
   if (to) {
     try {
@@ -235,25 +237,7 @@ function payPage(searchParams) {
 <div class="qr-tabs">
   <button type="button" class="chip selected" data-qr="uri" aria-pressed="true">URI</button>
   <button type="button" class="chip" data-qr="tm" aria-pressed="false"><span class="tab-note">sin monto</span><span class="avatars"><span class="av tm">Tm</span><span class="av ez">Ez</span></span></button>
-</div>
-<script>
-(function () {
-  var tabs = document.querySelectorAll(".qr-tabs .chip");
-  tabs.forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      tabs.forEach(function (b) {
-        b.classList.remove("selected");
-        b.setAttribute("aria-pressed", "false");
-      });
-      btn.classList.add("selected");
-      btn.setAttribute("aria-pressed", "true");
-      document.querySelectorAll(".qr-pane").forEach(function (pane) {
-        pane.hidden = pane.dataset.qr !== btn.dataset.qr;
-      });
-    });
-  });
-})();
-</script>`;
+</div>`;
       } else if (!isCard) {
         qrHtml = `<div class="qr">${qrSvg(
           merchantJsonQrPayload({
@@ -272,6 +256,52 @@ function payPage(searchParams) {
     }
   }
 
+  // Modal wrapping the QR section. Opens from the QR icon button in the
+  // amount row; closes via the close button, tapping the backdrop, or
+  // Escape. The script also keeps the existing URI/TM tab toggle.
+  const qrModal = qrHtml
+    ? `<div class="modal-overlay" id="qrModal" role="dialog" aria-modal="true" aria-label="Código QR para pagar" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" aria-label="Cerrar">×</button>
+    <p class="modal-title">Código QR para pagar</p>
+    ${qrHtml}
+  </div>
+</div>
+<script>
+(function () {
+  var modal = document.getElementById("qrModal");
+  var openBtn = document.getElementById("qrOpenBtn");
+  function openModal() { modal.hidden = false; document.body.style.overflow = "hidden"; }
+  function closeModal() { modal.hidden = true; document.body.style.overflow = ""; }
+  openBtn.addEventListener("click", openModal);
+  modal.querySelector(".modal-close").addEventListener("click", closeModal);
+  modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !modal.hidden) closeModal(); });
+  var tabs = document.querySelectorAll(".qr-tabs .chip");
+  tabs.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      tabs.forEach(function (b) {
+        b.classList.remove("selected");
+        b.setAttribute("aria-pressed", "false");
+      });
+      btn.classList.add("selected");
+      btn.setAttribute("aria-pressed", "true");
+      document.querySelectorAll(".qr-pane").forEach(function (pane) {
+        pane.hidden = pane.dataset.qr !== btn.dataset.qr;
+      });
+    });
+  });
+})();
+</script>`
+    : "";
+
+  // Amount row: the big amount on the left, the QR icon button on the
+  // right (also shown when there is no amount, so the QR stays reachable).
+  const amountRow =
+    amount || qrHtml
+      ? `<div class="amount">${amount ? `<span>${escapeHtml(amount)} <span class="cur">${escapeHtml(currency)}</span></span>` : ""}${qrHtml ? `<button type="button" class="qr-btn" id="qrOpenBtn" aria-label="Ver código QR" aria-haspopup="dialog">${QR_ICON_SVG}</button>` : ""}</div>`
+      : "";
+
   return `<!doctype html>
 <html lang="es">
 <head>
@@ -286,10 +316,12 @@ function payPage(searchParams) {
   h1 { font-size: 28px; margin: 0 0 8px; }
   p { line-height: 1.5; color: #555; }
   @media (prefers-color-scheme: dark) { p { color: #bbb; } }
-  .amount { font-size: 44px; font-weight: 800; margin: 24px 0; }
-  .amount span { font-size: 20px; font-weight: 600; color: #555; }
-  @media (prefers-color-scheme: dark) { .amount span { color: #bbb; } }
-  .qr { max-width: 260px; margin: 24px auto 8px; }
+  .amount { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 44px; font-weight: 800; margin: 24px 0; }
+  .amount .cur { font-size: 20px; font-weight: 600; color: #555; }
+  @media (prefers-color-scheme: dark) { .amount .cur { color: #bbb; } }
+  .qr-btn { margin-left: auto; flex: none; width: 44px; height: 44px; border-radius: 12px; border: 1px solid #ddd; background: #fff; color: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+  @media (prefers-color-scheme: dark) { .qr-btn { border-color: #444; background: #1e1e1e; } }
+  .qr { max-width: 260px; margin: 0 auto 8px; background: #fff; padding: 16px; border-radius: 12px; box-sizing: border-box; }
   .qr svg { width: 100%; height: auto; display: block; }
   .qr-tabs { display: flex; gap: 8px; justify-content: center; margin: 12px 0 4px; }
   .chip { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid #ddd; background: transparent; color: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
@@ -302,6 +334,14 @@ function payPage(searchParams) {
   .av.tm { background: #2563eb; }
   .av.ez { background: #16a34a; }
   @media (prefers-color-scheme: dark) { .av { border-color: #121212; } }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 10; }
+  .modal-overlay[hidden] { display: none; }
+  .modal-box { background: #fff; color: #1a1a1a; border-radius: 20px; padding: 20px 20px 16px; max-width: 340px; width: 100%; box-sizing: border-box; position: relative; text-align: center; }
+  .modal-box .chip { border-color: #ddd; }
+  .modal-box .chip.selected { background: #e8e8e6; border-color: #e8e8e6; }
+  .modal-box .av { border-color: #fff; }
+  .modal-title { margin: 4px 0 16px; font-size: 17px; font-weight: 700; color: #1a1a1a; }
+  .modal-close { position: absolute; top: 10px; right: 10px; width: 36px; height: 36px; border-radius: 50%; border: 0; background: #f0f0f0; color: #555; font-size: 22px; line-height: 1; cursor: pointer; padding: 0; }
   .card { background: #fff; border: 1px solid #e3e3e0; border-radius: 16px; padding: 8px 20px; margin: 24px 0; }
   @media (prefers-color-scheme: dark) { .card { background: #1e1e1e; border-color: #333; } }
   .row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #eee; }
@@ -320,14 +360,14 @@ function payPage(searchParams) {
 <main>
   <h1>${title}</h1>
   <p>${intro}</p>
-  ${amountHtml}
-  ${qrHtml}
+  ${amountRow}
   ${rows.length ? `<div class="card">${rows.join("")}</div>` : ""}
   <p>Para completar el pago necesitas tener Carlito instalado.</p>
   ${link ? `<a class="btn secondary" href="${escapeHtml(link)}">Abrir en Carlito</a>` : ""}
   <a class="btn primary" href="${DOWNLOAD_URL}">Instalar Carlito</a>
   <footer>Carlito is a suite of utilities for mobile services in Cuba. · <a href="${SITE_URL}">hivepen.com</a></footer>
 </main>
+${qrModal}
 </body>
 </html>`;
 }
