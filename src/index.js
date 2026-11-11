@@ -1,3 +1,5 @@
+import qrcode from "./qrcode.js";
+
 // src/index.js
 // Cloudflare Worker for carlito.hivepen.com.
 // Serves:
@@ -69,12 +71,69 @@ function buildQuery(pairs) {
     .join("&");
 }
 
+// Renders text as an inline SVG QR code, server-side (no external assets).
+// qrcode-generator, vendored in src/qrcode.js (MIT).
+function qrSvg(text, altId) {
+  const qr = qrcode(0, "M");
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({
+    cellSize: 4,
+    margin: 0,
+    scalable: true,
+    alt: { text: "Código QR para pagar", id: altId },
+  });
+}
+
+// The phone for the Transfermóvil transfer QR: the recipient's notification
+// phone from `notify`, only when it is a tel: URI with a valid Cuban mobile
+// number (strip the tel: prefix and any +53/53 country prefix; valid =
+// exactly 8 digits starting with 5). The notification is optional: anything
+// else returns "" and the QR carries an empty phone field.
+export function notifyPhoneNumber(notify) {
+  if (!notify) return "";
+  const match = /^tel:(.*)$/i.exec(notify.trim());
+  if (!match) return "";
+  let digits = match[1].replace(/\D/g, "");
+  if (digits.length > 8 && digits.startsWith("53")) digits = digits.slice(2);
+  return /^5\d{7}$/.test(digits) ? digits : "";
+}
+
+// Transfermóvil transfer QR: TRANSFERMOVIL_ETECSA,TRANSFERENCIA,<card>,<phone>,
+// with a trailing comma. The phone field is empty when there is no valid
+// tel: notify; the tab and the QR still show.
+export function transferMovilQrPayload(cardDigits, notify) {
+  return `TRANSFERMOVIL_ETECSA,TRANSFERENCIA,${cardDigits},${notifyPhoneNumber(notify)},`;
+}
+
+// Merchant (Pago en Línea) QR: the public Transfermóvil JSON format the app
+// itself parses and generates (PayToParser.formatTransfermovilOnlineJson).
+// Field order is part of the format; titulo/descripcion only when non-blank.
+export function merchantJsonQrPayload({
+  provider,
+  transactionId,
+  amount,
+  currency,
+  title,
+  description,
+}) {
+  const payload = {
+    id_transaccion: transactionId || "ESTATICO",
+    numero_proveedor: provider,
+    importe: amount || "0.00",
+    moneda: currency || "CUP",
+  };
+  if (title && title.trim()) payload.titulo = title;
+  if (description && description.trim()) payload.descripcion = description;
+  return JSON.stringify(payload);
+}
+
 // Deep link that opens the same payment in Carlito, built from the same
 // query params the Android app already parses (see PayToParser in
 // carlito-android): payto:// for card transfers, the Transfermóvil deep
 // link for merchant (Pago en Línea) payments. Returns null when there is
 // no recipient to pay.
-function appLink(params) {
+export function appLink(params) {
   const to = params.to;
   if (!to) return null;
   const digits = to.replace(/\D/g, "");
@@ -160,6 +219,59 @@ function payPage(searchParams) {
     ? `<div class="amount">${escapeHtml(amount)} <span>${escapeHtml(currency)}</span></div>`
     : "";
 
+  // QR codes. Transfer: the payto URI is the primary QR (it carries the
+  // amount, the main value of the invoice); the Transfermóvil QR is the
+  // "sin monto" alternative, switched with small tabs below the QR.
+  // Merchant: the single JSON QR. If QR generation ever fails, the page
+  // still renders without a QR instead of erroring.
+  let qrHtml = "";
+  if (to) {
+    try {
+      if (isCard && link) {
+        qrHtml = `<div class="qr">
+  <div class="qr-pane" data-qr="uri">${qrSvg(link, "qr-uri-desc")}</div>
+  <div class="qr-pane" data-qr="tm" hidden>${qrSvg(transferMovilQrPayload(digits, notify), "qr-tm-desc")}</div>
+</div>
+<div class="qr-tabs">
+  <button type="button" class="chip selected" data-qr="uri" aria-pressed="true">URI</button>
+  <button type="button" class="chip" data-qr="tm" aria-pressed="false"><span class="tab-note">sin monto</span><span class="avatars"><span class="av tm">Tm</span><span class="av ez">Ez</span></span></button>
+</div>
+<script>
+(function () {
+  var tabs = document.querySelectorAll(".qr-tabs .chip");
+  tabs.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      tabs.forEach(function (b) {
+        b.classList.remove("selected");
+        b.setAttribute("aria-pressed", "false");
+      });
+      btn.classList.add("selected");
+      btn.setAttribute("aria-pressed", "true");
+      document.querySelectorAll(".qr-pane").forEach(function (pane) {
+        pane.hidden = pane.dataset.qr !== btn.dataset.qr;
+      });
+    });
+  });
+})();
+</script>`;
+      } else if (!isCard) {
+        qrHtml = `<div class="qr">${qrSvg(
+          merchantJsonQrPayload({
+            provider: to,
+            transactionId: reference,
+            amount,
+            currency,
+            title: receiverName,
+            description: message,
+          }),
+          "qr-json-desc",
+        )}</div>`;
+      }
+    } catch {
+      qrHtml = "";
+    }
+  }
+
   return `<!doctype html>
 <html lang="es">
 <head>
@@ -177,6 +289,19 @@ function payPage(searchParams) {
   .amount { font-size: 44px; font-weight: 800; margin: 24px 0; }
   .amount span { font-size: 20px; font-weight: 600; color: #555; }
   @media (prefers-color-scheme: dark) { .amount span { color: #bbb; } }
+  .qr { max-width: 260px; margin: 24px auto 8px; }
+  .qr svg { width: 100%; height: auto; display: block; }
+  .qr-tabs { display: flex; gap: 8px; justify-content: center; margin: 12px 0 4px; }
+  .chip { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid #ddd; background: transparent; color: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chip.selected { background: #e8e8e6; border-color: #e8e8e6; }
+  @media (prefers-color-scheme: dark) { .chip { border-color: #444; } .chip.selected { background: #2e2e2e; border-color: #2e2e2e; } }
+  .tab-note { font-size: 12px; color: #888; }
+  .avatars { display: inline-flex; }
+  .av { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #fff; border: 2px solid #f6f6f4; }
+  .av + .av { margin-left: -6px; }
+  .av.tm { background: #2563eb; }
+  .av.ez { background: #16a34a; }
+  @media (prefers-color-scheme: dark) { .av { border-color: #121212; } }
   .card { background: #fff; border: 1px solid #e3e3e0; border-radius: 16px; padding: 8px 20px; margin: 24px 0; }
   @media (prefers-color-scheme: dark) { .card { background: #1e1e1e; border-color: #333; } }
   .row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #eee; }
@@ -196,6 +321,7 @@ function payPage(searchParams) {
   <h1>${title}</h1>
   <p>${intro}</p>
   ${amountHtml}
+  ${qrHtml}
   ${rows.length ? `<div class="card">${rows.join("")}</div>` : ""}
   <p>Para completar el pago necesitas tener Carlito instalado.</p>
   ${link ? `<a class="btn secondary" href="${escapeHtml(link)}">Abrir en Carlito</a>` : ""}

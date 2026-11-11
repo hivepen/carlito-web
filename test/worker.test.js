@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker from "../src/index.js";
+import worker, {
+  appLink,
+  merchantJsonQrPayload,
+  notifyPhoneNumber,
+  transferMovilQrPayload,
+} from "../src/index.js";
 
 async function get(path) {
   const res = await worker.fetch(new Request(`https://carlito.hivepen.com${path}`));
@@ -52,6 +57,105 @@ test("/pay shows a merchant payment with provider and reference", async () => {
   assert.match(body, /APK00000000004278640/);
   assert.match(body, /315\.0/);
   assert.match(body, /transfermovil:\/\/tm_compra_en_linea\/action\?/);
+});
+
+test("transfer URI QR payload is the payto link (default)", async () => {
+  assert.equal(
+    appLink({
+      to: "9200123456789012",
+      amount: "150.00",
+      currency: "CUP",
+      receiverName: "María",
+      message: "Préstamo",
+      reference: "",
+      notify: "",
+    }),
+    "payto://cu-card/9200123456789012?amount=CUP%3A150.00&receiver-name=Mar%C3%ADa&message=Pr%C3%A9stamo",
+  );
+});
+
+test("TM QR includes the phone from a valid tel: notify", async () => {
+  assert.equal(notifyPhoneNumber("tel:+5351234567"), "51234567");
+  assert.equal(notifyPhoneNumber("tel:51234567"), "51234567");
+  assert.equal(notifyPhoneNumber("tel:+53 5123 4567"), "51234567");
+  assert.equal(
+    transferMovilQrPayload("9200123456789012", "tel:+5351234567"),
+    "TRANSFERMOVIL_ETECSA,TRANSFERENCIA,9200123456789012,51234567,",
+  );
+});
+
+test("TM QR carries an empty phone when notify is absent or invalid", async () => {
+  assert.equal(notifyPhoneNumber(""), "");
+  assert.equal(notifyPhoneNumber("mailto:ana@example.com"), "");
+  assert.equal(notifyPhoneNumber("5351234567"), "");
+  assert.equal(notifyPhoneNumber("tel:21234567"), "");
+  assert.equal(notifyPhoneNumber("tel:123"), "");
+  assert.equal(
+    transferMovilQrPayload("9200123456789012", ""),
+    "TRANSFERMOVIL_ETECSA,TRANSFERENCIA,9200123456789012,,",
+  );
+  assert.equal(
+    transferMovilQrPayload("9200123456789012", "mailto:ana@example.com"),
+    "TRANSFERMOVIL_ETECSA,TRANSFERENCIA,9200123456789012,,",
+  );
+});
+
+test("Pago en línea JSON QR payload follows the merchant format", async () => {
+  assert.equal(
+    merchantJsonQrPayload({
+      provider: "57001",
+      transactionId: "APK00000000004278640",
+      amount: "315.0",
+      currency: "CUP",
+      title: "",
+      description: "",
+    }),
+    '{"id_transaccion":"APK00000000004278640","numero_proveedor":"57001","importe":"315.0","moneda":"CUP"}',
+  );
+  assert.equal(
+    merchantJsonQrPayload({
+      provider: "80001",
+      transactionId: "",
+      amount: "",
+      currency: "",
+      title: "Bodega La Principal",
+      description: "Compra",
+    }),
+    '{"id_transaccion":"ESTATICO","numero_proveedor":"80001","importe":"0.00","moneda":"CUP","titulo":"Bodega La Principal","descripcion":"Compra"}',
+  );
+});
+
+test("/pay transfer page shows both QRs with URI selected by default", async () => {
+  const { body } = await get(
+    "/pay?to=9200123456789012&amount=150.00&currency=CUP&receiver-name=Mar%C3%ADa&message=Pr%C3%A9stamo",
+  );
+  assert.match(body, /<svg[^>]*viewBox/);
+  assert.match(body, /data-qr="uri"/);
+  assert.match(body, /data-qr="tm"/);
+  assert.match(body, /class="chip selected" data-qr="uri"/);
+  assert.match(body, /sin monto/);
+  assert.match(body, /<span class="av tm">Tm<\/span>/);
+  assert.match(body, /<span class="av ez">Ez<\/span>/);
+});
+
+test("/pay transfer page still shows the TM tab without a phone", async () => {
+  const { body } = await get("/pay?to=9200123456789012&amount=100&currency=CUP");
+  assert.match(body, /data-qr="tm"/);
+  assert.match(body, /sin monto/);
+  const { body: invalidNotify } = await get(
+    "/pay?to=9200123456789012&amount=100&currency=CUP&notify=mailto%3Aana%40example.com",
+  );
+  assert.match(invalidNotify, /data-qr="tm"/);
+  assert.match(invalidNotify, /sin monto/);
+});
+
+test("/pay merchant page shows the JSON QR and no TM tab", async () => {
+  const { body } = await get(
+    "/pay?to=57001&amount=315.0&currency=CUP&reference=APK00000000004278640",
+  );
+  assert.match(body, /<svg[^>]*viewBox/);
+  assert.doesNotMatch(body, /sin monto/);
+  assert.doesNotMatch(body, /data-qr="tm"/);
 });
 
 test("/ redirects to hivepen.com and unknown paths 404", async () => {
