@@ -12,14 +12,24 @@ landing page comes later.
 | Route | Behaviour |
 | --- | --- |
 | `/` | Redirects to `https://hivepen.com/` (the landing lives there for now). |
-| `/.well-known/assetlinks.json` | Android App Links verification file (`application/json`). Lets Android open `carlito.hivepen.com/pay` links directly in Carlito. |
-| `/pay?...` | Fallback page for browsers: shows the payment details (amount, recipient, concept) and an install button. People without Carlito installed land here when they tap a payment link. |
+| `/.well-known/assetlinks.json` | Android App Links verification file (`application/json`). Lets Android open `carlito.hivepen.com/sendme` and `/pay` links directly in Carlito. |
+| `/sendme?...` | Fallback page for transfer requests: shows the request details (destination, amount, concept) and an install button. One target parameter names the CUPP-1 target type: `cu-card` (bank card), `cubacel` (Cubacel mobile balance) or `mitransfer` (MiTransfer wallet). |
+| `/pay?...` | Fallback page for merchant payments (Pago en Línea): shows the payment details and an install button. One route for both Transfermóvil services: `reference` blank or `ESTATICO` means the static service (31), any other reference means the dynamic service (30). |
 
-Payment-link format (same data the Android app parses):
+Link formats (CUPP-1 parameter vocabulary, same data the Android app parses):
 
 ```text
-https://carlito.hivepen.com/pay?to=<16-digit card or provider number>&amount=150.00&currency=CUP&receiver-name=María&message=Préstamo&reference=<tx id>
+https://carlito.hivepen.com/sendme?cu-card=<16-digit card>&amount=CUP:1500.00&receiver-name=María&message=Préstamo&reference=<ref>&notify=tel:+5351234567
+https://carlito.hivepen.com/sendme?cubacel=<E.164 phone>&amount=CUP:100.00
+https://carlito.hivepen.com/sendme?mitransfer=<E.164 phone>&amount=USD:50.00
+https://carlito.hivepen.com/pay?provider=<provider number>&reference=<tx id or ESTATICO>&amount=CUP:315&receiver-name=Apklis&message=<description>
 ```
+
+The merchant JSON QR and the `transfermovil://tm_compra_en_linea` deep
+link keep Transfermóvil's own field names (`id_transaccion`,
+`numero_proveedor`, `importe`, `moneda`, `titulo`, `descripcion`): they
+are Transfermóvil's formats, not ours, and the Worker translates the URL
+parameters into them.
 
 ## Fingerprints
 
